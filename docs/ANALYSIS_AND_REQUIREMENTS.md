@@ -125,20 +125,163 @@ Diseñada bajo un enfoque stateless e independiente de persistencia, la platafor
 
 ---
 
-## 3. Diseño del Sistema (Reservado)
+## 3. Diseño del Sistema 
 
-> *Esta sección se completará en las siguientes etapas del proyecto.*
+### 3.1. Arquitectura General y Decisiones Tecnológicas
 
-### 3.1. Arquitectura General y Contrato de API
+La arquitectura sigue el patrón de separación **Frontend-Backend (Decoupled)** con despliegue unificado mediante contenedores:
 
-* **Frontend:** React (Vite) + Tailwind CSS + Recharts (para visualización de rolling window).
-* **Backend:** \[A definir: Go vs Java\]
-* **Endpoint Principal:** `POST /api/v1/portfolio/analyze`
+* **Backend:** **Go (Golang 1.22+)**
 
-### 3.2. Diagramas de Secuencia
+  * Elegido por su velocidad de ejecución, compilación a binarios nativos ligeros, bajo uso de memoria RAM (\~15 MB) y facilidad para manipular estructuras de datos lineales en memoria de forma altamente eficiente.
 
-* *Próximo paso: Flujo de datos entre interfaz, validaciones, calculador CAPM y respuesta JSON.*
+  * Utiliza un marco estándar o microframework ultraligero (`net/http` o `Chi` / `Fiber`) junto a paquetes nativos para parseo de CSV.
 
-### 3.3. Estructura de Clases / Paquetes del Backend
+* **Frontend:** **React + Vite + Tailwind CSS + Recharts**
 
-* *Próximo paso: Definición de DTOs, Parsers, Engine Math (CAPM, Risk, Performance) y Controllers.*
+  * Proporciona un entorno interactivo y moderno con componentes para subida de archivos y gráficos dinámicos de las series en ventana móvil.
+
+* **Orquestación y Despliegue:** **Docker & Docker Compose**
+
+  * `docker-compose.yml` define dos servicios:
+
+    * `backend`: Imagen multi-stage de Go (compilada en Scratch/Alpine).
+
+    * `frontend`: Build optimizado servido opcionalmente vía Nginx o Vite Preview.
+
+### 3.2. Estructura de Paquetes del Backend (Go)
+
+```
+backend/
+├── cmd/
+│   └── api/
+│       └── main.go           # Entrypoint de la aplicación Go
+├── internal/
+│   ├── handler/
+│   │   └── portfolio.go      # Handlers HTTP (parseo multipart request, serialización JSON)
+│   ├── service/
+│   │   └── analytics.go      # Orquestador del flujo de cálculo
+│   ├── engine/
+│   │   ├── capm.go           # Cálculo de Alpha y Beta
+│   │   ├── metrics.go        # Total Return, Volatilidad, Sharpe, Sortino, Drawdown
+│   │   └── rolling.go        # Algoritmo de ventana móvil (Rolling Window)
+│   └── model/
+│       └── portfolio.go      # Estructuras de datos (DTOs y Domain Entities)
+├── Dockerfile
+└── go.mod
+
+```
+
+### 3.3. Especificación OpenAPI / Contrato JSON
+
+#### Endpoint Principal
+
+* **URL:** `POST /api/v1/portfolio/analyze`
+
+* **Content-Type:** `multipart/form-data`
+
+* **Parámetros Form:**
+
+  * `file`: Archivo `.csv` (Requerido)
+
+  * `rolling_window`: Entero positivo (Opcional, por defecto `30`)
+
+#### Ejemplo de Estructura JSON de Respuesta (`200 OK`)
+
+```
+{
+  "summary": {
+    "total_records": 252,
+    "start_date": "2024-01-02",
+    "end_date": "2024-12-31",
+    "rolling_window_days": 30
+  },
+  "global_metrics": {
+    "performance": {
+      "total_return": 0.1845,
+      "annualized_return": 0.1845
+    },
+    "risk": {
+      "annualized_volatility": 0.1420,
+      "sharpe_ratio": 1.158,
+      "sortino_ratio": 1.621,
+      "max_drawdown": -0.0832
+    },
+    "capm": {
+      "alpha": 0.0241,
+      "beta": 1.085
+    }
+  },
+  "rolling_metrics": [
+    {
+      "date": "2024-02-14",
+      "volatility": 0.1250,
+      "sharpe_ratio": 1.050,
+      "beta": 1.020
+    }
+  ]
+}
+
+```
+
+### 3.4. Diagrama de Secuencia (PlantUML)
+
+A continuación se detalla el flujo de interacciones desde que el usuario sube el archivo hasta que recibe la respuesta analizada:
+
+![alt text](image.png)
+
+```
+@startuml
+autonumber
+actor "Usuario / Analista" as User
+participant "Frontend (React)" as Frontend
+participant "PortfolioHandler (Go)" as Handler
+participant "CSVParser" as Parser
+participant "AnalyticsService" as Service
+participant "QuantEngine" as Engine
+
+User -> Frontend: Selecciona CSV y define rolling_window
+Frontend -> Frontend: Valida extensión (.csv) y tamaño (< 5MB)
+Frontend -> Handler: POST /api/v1/portfolio/analyze (multipart/form-data)
+
+activate Handler
+Handler -> Parser: ParseCSV(fileReader)
+activate Parser
+alt Formato o Encabezados Inválidos / Filas corruptas
+    Parser --> Handler: Error (InvalidCSV / ColumnMissing)
+    Handler --> Frontend: HTTP 400 Bad Request (JSON Error)
+    Frontend --> User: Muestra notificación de error
+else Parseo Exitoso
+    Parser --> Handler: []ReturnRecord (date, portfolio_return, benchmark_return)
+end
+deactivate Parser
+
+Handler -> Service: AnalyzePortfolio(records, rollingWindow)
+activate Service
+
+alt Registros Insuficientes (< rollingWindow)
+    Service --> Handler: Error (InsufficientData)
+    Handler --> Frontend: HTTP 422 Unprocessable Entity (JSON Error)
+    Frontend --> User: Muestra sugerencia de ajustar ventana
+else Datos Válidos
+    Service -> Engine: CalculateGlobalMetrics(records)
+    activate Engine
+    Engine --> Service: GlobalMetrics (Performance, Risk, CAPM Alpha & Beta)
+    deactivate Engine
+
+    Service -> Engine: CalculateRollingMetrics(records, rollingWindow)
+    activate Engine
+    Engine --> Service: []RollingMetricPoint
+    deactivate Engine
+
+    Service --> Handler: AnalysisResult
+    Handler --> Frontend: HTTP 200 OK (JSON AnalysisResult)
+    deactivate Service
+    
+    Frontend -> Frontend: Renderiza Tarjetas de Métricas y Gráficos
+    Frontend --> User: Muestra Dashboard Cuantitativo Completo
+end
+deactivate Handler
+@enduml
+
+```
