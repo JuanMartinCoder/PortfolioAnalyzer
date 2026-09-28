@@ -28,6 +28,7 @@ type Metrics struct {
 	SharpeRatio          float64 `json:"sharpe_ratio"`
 	SortinoRatio         float64 `json:"sortino_ratio"`
 	MaxDrawdown          float64 `json:"max_drawdown"`
+	RSquare          	 float64 `json:"r_square"`
 	Beta                 float64 `json:"beta"`
 	Alpha                float64 `json:"alpha"`
 }

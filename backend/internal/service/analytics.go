@@ -36,6 +36,7 @@ func (s *AnalyticsService) Analyze(points []model.DataPoint, params model.Reques
 	beta := engine.CalculateBeta(points)
 	alpha := engine.CalculateAlpha(anualizedReturn, beta , params.RiskFreeRate , points)	
 
+	rSquare := engine.CalculateRSquared(points)
 
 	// 3. Si params.RollingWindow > 0, calcular rolling series con engine
 	
@@ -62,6 +63,7 @@ func (s *AnalyticsService) Analyze(points []model.DataPoint, params model.Reques
 			SharpeRatio: sharpeRatio,
 			SortinoRatio: sortinoRatio,
  			MaxDrawdown: maxDD,
+			RSquare: rSquare,
 			Beta: beta,
 			Alpha: alpha,
 		},
