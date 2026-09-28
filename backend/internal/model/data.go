@@ -35,9 +35,10 @@ type Metrics struct {
 // RollingMetricPoint punto de serie temporal para ventana móvil
 type RollingMetricPoint struct {
 	Date     string  `json:"date"`
-	Sharpe   float64 `json:"sharpe"`
 	Volatility float64 `json:"volatility"`
+	Sharpe   float64 `json:"sharpe"`
 	Beta     float64 `json:"beta"`
+	Alpha     float64 `json:"alpha"`
 }
 
 type AnalysisResponse struct {
